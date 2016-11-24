@@ -11,7 +11,7 @@ enum {UP, RIGHT, DOWN, LEFT};
 vector<Vec4i> hierarchy;
 vector<vector<Point>> contours;
 Mat frame;
-int f [100000];
+int f [1000000];
 
 bool crossProduct (Point2f A, Point2f B, Point2f C) {
     return ((B.x - A.x) * (C.y - B.y) - (C.x - B.x) * (B.y - A.y) < 0);
@@ -39,12 +39,12 @@ vector<int> findCandidates (Mat frame) {
     return res;
 }
 
-float dist (Point2f x, Point2f y) {
+double dist (Point2f x, Point2f y) {
     // Return the distance between two points
     return sqrt ((x.x - y.x) * (x.x - y.x) + (x.y - y.y) * (x.y - y.y));
 }
 
-vector<int> getPoint (float AB, float BC, float CA, int A, int B, int C) {
+vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
     vector<int> res;
     res.clear ();
     if (AB > BC && AB > CA) {
@@ -65,7 +65,7 @@ vector<int> getPoint (float AB, float BC, float CA, int A, int B, int C) {
     return res;
 }
 
-bool dist_constraint (float AB, float BC, float CA) {
+bool dist_constraint (double AB, double BC, double CA) {
     // TODO : add more constraint
     if (AB > BC && AB > CA) {
         if (abs (BC - CA) > 0.2 * max (BC, CA)) return 1;
@@ -76,6 +76,9 @@ bool dist_constraint (float AB, float BC, float CA) {
     if (CA > AB && CA > BC) {
         if (abs (BC - AB) > 0.2 * max (BC, AB)) return 1;
     }
+}
+
+bool area_constraint (double areaA, double areaB, double areaC) {
 }
 
 Point2f findUP (int id) {
@@ -171,10 +174,14 @@ vector<Mat> findQR (vector<int> candidates) {
     for (int A = 0; A < size; ++A) 
         for (int B = A + 1; B < size; ++B)
             for (int C = B + 1; C < size; ++C) {
-                float AB = dist(mean[A],mean[B]);
-                float BC = dist(mean[B],mean[C]);
-                float CA = dist(mean[C],mean[A]);
+                double AB = dist(mean[A],mean[B]);
+                double BC = dist(mean[B],mean[C]);
+                double CA = dist(mean[C],mean[A]);
                 if (dist_constraint (AB, BC, CA)) continue;
+                if (area_constraint (contourArea (contours[candidates[A]]), 
+                            contourArea (contours[candidates[B]]), 
+                            contourArea (contours[candidates[C]]))
+                        ) continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
                 // Use cross product to determine left and right
