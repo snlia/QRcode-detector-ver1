@@ -3,6 +3,8 @@
 #include <cmath>
 #include <algorithm>
 
+#define sqr(x) ((x) * (x))
+
 using namespace std;
 using namespace cv;
 
@@ -41,7 +43,7 @@ vector<int> findCandidates (Mat frame) {
 
 double dist (Point2f x, Point2f y) {
     // Return the distance between two points
-    return sqrt ((x.x - y.x) * (x.x - y.x) + (x.y - y.y) * (x.y - y.y));
+    return sqrt (sqr (x.x - y.x) + sqr (x.y - y.y));
 }
 
 vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
@@ -67,18 +69,24 @@ vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
 
 bool dist_constraint (double AB, double BC, double CA) {
     // TODO : add more constraint
-    if (AB > BC && AB > CA) {
+    double maxLen = max (AB, max (BC, CA));
+    if (AB == maxLen) {
         if (abs (BC - CA) > 0.2 * max (BC, CA)) return 1;
     }
-    if (BC > AB && BC > CA) {
+    if (BC == maxLen) {
         if (abs (AB - CA) > 0.2 * max (CA, AB)) return 1;
     }
-    if (CA > AB && CA > BC) {
+    if (CA == maxLen) {
         if (abs (BC - AB) > 0.2 * max (BC, AB)) return 1;
     }
+    return 0;
 }
 
 bool area_constraint (double areaA, double areaB, double areaC) {
+    double areaMean = (areaA + areaB + areaC) / 3;
+    double sigma = sqr (areaA - areaMean) + sqr (areaB - areaMean) + sqr (areaC - areaMean);
+    sigma /= 3 * sqr (areaMean);
+    return sigma > 0.005;
 }
 
 Point2f findUP (int id) {
@@ -156,11 +164,10 @@ int findOrientation (Point2f meanA, Point2f meanB, Point2f meanC) {
 
 vector<Mat> findQR (vector<int> candidates) {
     vector<Mat> res; res.clear ();
-    Mat qr, raw, gray, thres;
+    Mat qr, raw, gray, thres, rawFrame;
     qr = Mat::zeros(100, 100, CV_8UC1);
     raw = Mat::zeros(100, 100, CV_8UC1);
-    gray = Mat::zeros(100, 100, CV_8UC1);
-    thres = Mat::zeros(100, 100, CV_8UC1);
+    rawFrame = frame;
     int size = candidates.size ();
     if (size < 3) return res; 
     vector<Moments> mome(size);
@@ -168,20 +175,21 @@ vector<Mat> findQR (vector<int> candidates) {
     vector<Point2f> pts1, pts2;
     // Caculate the mean point
     for (int i = 0; i < size; ++i) {
-        mome[i] = moments( contours[candidates[i]], false ); 
-        mean[i] = Point2f( mome[i].m10/mome[i].m00 , mome[i].m01/mome[i].m00 );
+        mome[i] = moments (contours[candidates[i]], false); 
+        mean[i] = Point2f (mome[i].m10/mome[i].m00 , mome[i].m01/mome[i].m00);
     }
     for (int A = 0; A < size; ++A) 
         for (int B = A + 1; B < size; ++B)
             for (int C = B + 1; C < size; ++C) {
-                double AB = dist(mean[A],mean[B]);
-                double BC = dist(mean[B],mean[C]);
-                double CA = dist(mean[C],mean[A]);
+                double AB = dist (mean[A],mean[B]);
+                double BC = dist (mean[B],mean[C]);
+                double CA = dist (mean[C],mean[A]);
                 if (dist_constraint (AB, BC, CA)) continue;
                 if (area_constraint (contourArea (contours[candidates[A]]), 
                             contourArea (contours[candidates[B]]), 
                             contourArea (contours[candidates[C]]))
-                        ) continue;
+                        ) 
+                    puts ("area");
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
                 // Use cross product to determine left and right
@@ -206,11 +214,9 @@ vector<Mat> findQR (vector<int> candidates) {
 				pts2.push_back(Point2f(0, qr.rows));
                 // Do perspective transform
                 Mat M = getPerspectiveTransform (pts1,pts2);
-                warpPerspective (frame, raw, M, Size (qr.cols,qr.rows));
-                copyMakeBorder (raw, qr, 10, 10, 10, 10,BORDER_CONSTANT, Scalar(255,255,255));
-                cvtColor (qr,gray,CV_RGB2GRAY);
-                threshold (gray, thres, 127, 255, CV_THRESH_BINARY);
-                res.push_back (thres);
+                warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
+                copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
+                res.push_back (qr);
             }
     return res;
 }
