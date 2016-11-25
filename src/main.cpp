@@ -69,17 +69,19 @@ vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
 
 bool dist_constraint (double AB, double BC, double CA) {
     // TODO : add more constraint
-    double maxLen = max (AB, max (BC, CA));
-    if (AB == maxLen) {
+    if (AB > BC && AB > CA) {
         if (abs (BC - CA) > 0.2 * max (BC, CA)) return 1;
+        return 0;
     }
-    if (BC == maxLen) {
+    if (BC > AB && BC > CA) {
         if (abs (AB - CA) > 0.2 * max (CA, AB)) return 1;
+        return 0;
     }
-    if (CA == maxLen) {
+    if (CA > AB && CA > BC) {
         if (abs (BC - AB) > 0.2 * max (BC, AB)) return 1;
+        return 0;
     }
-    return 0;
+    return 1;
 }
 
 bool area_constraint (double areaA, double areaB, double areaC) {
@@ -189,7 +191,7 @@ vector<Mat> findQR (vector<int> candidates) {
                             contourArea (contours[candidates[B]]), 
                             contourArea (contours[candidates[C]]))
                         ) 
-                    puts ("area");
+                    continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
                 // Use cross product to determine left and right
@@ -217,6 +219,7 @@ vector<Mat> findQR (vector<int> candidates) {
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
                 copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
                 res.push_back (qr);
+                return res;
             }
     return res;
 }
