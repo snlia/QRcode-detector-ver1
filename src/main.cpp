@@ -5,6 +5,7 @@
 #include <boost/program_options.hpp>
 
 #define sqr(x) ((x) * (x))
+#define INF 1000
 
 using namespace std;
 using namespace cv;
@@ -18,8 +19,10 @@ Mat frame;
 int f [1000000];
 
 bool useblur = 1;
+bool usequad = 1;
 int cannylow = 75;
 int cannyhigh = 200;
+int hierarchythre = 5;
 int qrsize = 100;
 double areathre = 0.005;
 double distthre = 0.2;
@@ -32,20 +35,38 @@ int countHierarchy (int x) {
     // return the maxium deepth
     if (~f[x]) return f[x];
     int res = 0;
-    for (int sx = hierarchy[x][2]; ~sx; sx = hierarchy[sx][2])
-        res = max (res, countHierarchy (sx) + 1);
+    int sx = hierarchy[x][2];
+    if (~sx) {
+        res = countHierarchy (sx) + 1;
+        if (~hierarchy[sx][1]) res = -INF;
+    }
     f[x] = res;
     return res;
 }
 
 vector<int> findCandidates (Mat frame) {
-    vector<int> res;
+    vector<int> res, tmp;
     res.clear ();
+    tmp.clear ();
 
     for (int i = 0; i < contours.size (); ++i) f[i] = -1;
     
-    for (int i = 0; i < contours.size (); ++i)
-        if (countHierarchy (i) >= 5) res.push_back (i);
+    for (int i = 0; i < contours.size (); ++i) {
+        if (usequad) {
+            if (contours[i].size () == 4 && countHierarchy (i) >= hierarchythre) 
+                tmp.push_back (i);
+        }
+        else if (countHierarchy (i) >= hierarchythre)
+            tmp.push_back (i);
+    }
+
+    // the candidates cannot overlap
+    for (int i = 0; i < contours.size (); ++i) f[i] = 1; 
+    for (int i = 0; i < tmp.size (); ++i) {
+        for (int x = hierarchy[tmp[i]][2]; ~x; x = hierarchy[x][2]) f[i] = 0;
+    }
+    for (int i = 0; i < tmp.size (); ++i)
+        if (f[tmp[i]]) res.push_back (tmp[i]);
 
     return res;
 }
@@ -217,11 +238,13 @@ int parameter_init (int argc, const char *argv[]) {
     desc.add_options()
         ("help", "show this message.")
         ("noblur", "do not use blur.")
+        ("noquad", "do not use quadrangle detection.")
         ("clow", po::value<double>(), "set up the low thresold of canny, default 75.")
         ("chigh", po::value<double>(), "set up the high thresold of canny, default 200.")
         ("size", po::value<int>(), "set up the qr code size, default 100.")
-        ("athre", po::value<double>(), "set up the thresold for area constraint, default 0.2.")
-        ("dthre", po::value<double>(), "set up the thresold for distance constraint, default 0.005.")
+        ("hthre", po::value<int>(), "set up the thresold of hierarchy, default 5.")
+        ("athre", po::value<double>(), "set up the thresold of area constraint, default 0.2.")
+        ("dthre", po::value<double>(), "set up the thresold of distance constraint, default 0.005.")
         ;
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -235,25 +258,33 @@ int parameter_init (int argc, const char *argv[]) {
         cout << "Do not use blur." << endl;
         useblur = 0;
     } 
+    else if (vm.count ("noquad")) {
+        cout << "Do not use quadrangle detection." << endl;
+        usequad = 0;
+    }
     else  if (vm.count ("clow")) {
         cannylow = vm["clow"].as<double> ();
-        printf ("canny low thresold is set as %lf:\n", cannylow);
+        printf ("canny low thresold is set as %lf\n", cannylow);
     }
     else if (vm.count ("chigh")) {
         cannyhigh = vm["chigh"].as<double> ();
-        printf ("canny high thresold is set as %lf:\n", cannyhigh);
+        printf ("canny high thresold is set as %lf\n", cannyhigh);
     }
     else if (vm.count ("size")) {
         qrsize = vm["size"].as<int> ();
-        printf ("QRcode size is set as %d:\n", qrsize);
+        printf ("QRcode size is set as %d\n", qrsize);
+    }
+    else if (vm.count ("hthre")) {
+        hierarchythre = vm["hthre"].as<int> ();
+        printf ("hierarchy constraint thresold is set as %d\n", hierarchythre);
     }
     else if (vm.count ("athre")) {
         areathre = vm["athre"].as<double> ();
-        printf ("area constraint thresold is set as %lf:\n", areathre);
+        printf ("area constraint thresold is set as %lf\n", areathre);
     }
     else if (vm.count ("dthre")) {
         distthre = vm["dthre"].as<double> ();
-        printf ("distance constraint thresold is set as %lf:\n", distthre);
+        printf ("distance constraint thresold is set as %lf\n", distthre);
     }
     return 0;
 }
@@ -280,7 +311,18 @@ int main(int argc, const char *argv[]) {
             blur (gray, detected_edges, Size(3,3));
         // Find FIG candidates
         Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
-        findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+        if (usequad) {
+            contours.clear ();
+            Mat approx;
+            vector<vector<Point>> raw_contours;
+            findContours (edges, raw_contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+            for (int i = 0; i < raw_contours.size (); ++i) {
+                approxPolyDP (Mat(raw_contours[i]), approx, arcLength (Mat(raw_contours[i]), true) * 0.02, true);
+                contours.push_back (approx);
+            }
+        }
+        else 
+            findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
         vector<int> candidates = findCandidates (gray);
         
         vector<Mat> qrs = findQR (candidates);
