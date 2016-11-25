@@ -15,8 +15,8 @@ vector<vector<Point>> contours;
 Mat frame;
 int f [1000000];
 
-bool crossProduct (Point2f A, Point2f B, Point2f C) {
-    return ((B.x - A.x) * (C.y - B.y) - (C.x - B.x) * (B.y - A.y) < 0);
+double crossProduct (Point2f A, Point2f B, Point2f C) {
+    return ((B.x - A.x) * (C.y - B.y) - (C.x - B.x) * (B.y - A.y));
 }
 
 int countHierarchy (int x) {
@@ -44,6 +44,11 @@ vector<int> findCandidates (Mat frame) {
 double dist (Point2f x, Point2f y) {
     // Return the distance between two points
     return sqrt (sqr (x.x - y.x) + sqr (x.y - y.y));
+}
+
+double distLine (Point2f X, Point2f A, Point2f B) {
+    // Returen the distance between Point X and Line AB
+    return abs (crossProduct (X, A, B) / dist (A, B));
 }
 
 vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
@@ -91,77 +96,50 @@ bool area_constraint (double areaA, double areaB, double areaC) {
     return sigma > 0.005;
 }
 
-Point2f findUP (int id) {
-    Point2f res (frame.cols, frame.rows);
-    for (int i = 0; i < contours[id].size (); ++i) 
-        if (contours[id][i].y < res.y || (contours[id][i].y == res.y && contours[id][i].x < res.x)) 
-            res = contours[id][i];
+Point2f findAwayFromLine (int x, Point2f A, Point2f B) {
+    // Find a Point in contours[x] that most away from line AB 
+    Point2f res;
+    double maxP = 0;
+    for (int i = 0; i < contours[x].size(); ++i) {
+        double tmp = distLine (contours[x][i], A, B);
+        if (tmp > maxP) {
+            maxP = tmp;
+            res = contours[x][i];
+        } 
+    }
     return res;
 }
 
-Point2f findRIGHT (int id) {
-    Point2f res (0, frame.rows);
-    for (int i = 0; i < contours[id].size (); ++i) 
-        if (contours[id][i].x > res.x || (contours[id][i].x == res.x && contours[id][i].y < res.y)) 
-            res = contours[id][i];
-    return res;
-}
-
-Point2f findDOWN (int id) {
-    Point2f res (0, 0);
-    for (int i = 0; i < contours[id].size (); ++i) 
-        if (contours[id][i].y > res.y || (contours[id][i].y == res.y && contours[id][i].x > res.x)) 
-            res = contours[id][i];
-    return res;
-}
-
-Point2f findLEFT (int id) {
-    Point2f res (frame.cols, 0);
-    for (int i = 0; i < contours[id].size (); ++i) 
-        if (contours[id][i].x < res.x || (contours[id][i].y == res.y && contours[id][i].y > res.y)) 
-            res = contours[id][i];
+Point2f findAwayFromPoint (int x, Point2f P) {
+    // Find a Point in contours[x] that most away from point P
+    Point2f res;
+    double maxP = 0;
+    for (int i = 0; i < contours[x].size(); ++i) {
+        double tmp = dist (contours[x][i], P);
+        if (tmp > maxP) {
+            maxP = tmp;
+            res = contours[x][i];
+        } 
+    }
     return res;
 }
 
 Point2f findN (Point2f top, Point2f right, Point2f left) {
-    return Point2f (right.x + left.x - top.x, right.y + left.y - top.y);
+        return Point2f (right.x + left.x - top.x, right.y + left.y - top.y);
 }
 
-vector<Point2f> findCorners (int top, int left, int right, int orientation) {
+vector<Point2f> findCorners (int top, int left, int right, Point2f meanTop, Point2f meanLeft, Point2f meanRight) {
     vector<Point2f> res;
     res.clear ();
-    switch (orientation) {
-        case UP:
-            res.push_back (findUP (top));
-            res.push_back (findRIGHT (right));
-            res.push_back (findLEFT (left));
-            break;
-        case RIGHT:
-            res.push_back (findRIGHT (top));
-            res.push_back (findDOWN (right));
-            res.push_back (findUP (left));
-            break;
-        case DOWN:
-            res.push_back (findDOWN (top));
-            res.push_back (findLEFT (right));
-            res.push_back (findRIGHT (left));
-            break;
-        case LEFT:
-            res.push_back (findLEFT (top));
-            res.push_back (findUP (right));
-            res.push_back (findDOWN (left));
-            break;
-    }
-    res.push_back (findN (res[0], res[1], res[2]));
-    swap (res[2], res[3]);
+    Point2f A = findAwayFromLine (top, meanLeft, meanRight);
+    Point2f verA = findAwayFromPoint (top, A);
+    Point2f B = findAwayFromLine (right, A, verA);
+    Point2f C = findAwayFromLine (left, A, verA);
+    res.push_back (A);
+    res.push_back (B);
+    res.push_back (C);
+    res.push_back (findN (A, B, C));
     return res;
-}
-
-int findOrientation (Point2f meanA, Point2f meanB, Point2f meanC) {
-    if (meanA.y < meanB.y && meanA.y < meanC.y) return UP;
-    if (meanA.x > meanB.x && meanA.x > meanC.x) return RIGHT;
-    if (meanA.y > meanB.y && meanA.y > meanC.y) return DOWN;
-    return LEFT;
 }
 
 vector<Mat> findQR (vector<int> candidates) {
@@ -195,14 +173,14 @@ vector<Mat> findQR (vector<int> candidates) {
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
                 // Use cross product to determine left and right
-                if (crossProduct (mean[left], mean[top], mean[right])) 
+                if (crossProduct (mean[left], mean[top], mean[right]) < 0) 
                     swap (left, right);
                 // Draw the FIG
                 drawContours (frame, contours, candidates[top] , Scalar(255,0,0), 2, 8, hierarchy, 0 );
                 drawContours (frame, contours, candidates[left] , Scalar(0,255,0), 2, 8, hierarchy, 0 );
                 drawContours (frame, contours, candidates[right] , Scalar(0,0,255), 2, 8, hierarchy, 0 );
                 // Find all corners
-                pts1 = findCorners (candidates[top], candidates[left], candidates[right], findOrientation (mean[top], mean[left], mean[right]));
+                pts1 = findCorners (candidates[top], candidates[left], candidates[right], mean[top], mean[left], mean[right]);
                 /*
                 circle (frame, cvPoint (pts1[0].x, pts1[0].y), 10 , Scalar(255,0,0), 2, 8, 0);
                 circle (frame, cvPoint (pts1[2].x, pts1[2].y), 10, Scalar(0,255,0), 2, 8, 0);
@@ -212,8 +190,8 @@ vector<Mat> findQR (vector<int> candidates) {
                 pts2.clear ();
                 pts2.push_back(Point2f(0,0));
 				pts2.push_back(Point2f(qr.cols,0));
-				pts2.push_back(Point2f(qr.cols, qr.rows));
 				pts2.push_back(Point2f(0, qr.rows));
+				pts2.push_back(Point2f(qr.cols, qr.rows));
                 // Do perspective transform
                 Mat M = getPerspectiveTransform (pts1,pts2);
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
