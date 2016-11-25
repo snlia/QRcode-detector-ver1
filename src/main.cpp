@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include "swordfeng.h"
 #include <boost/program_options.hpp>
 
 #define sqr(x) ((x) * (x))
@@ -26,6 +27,10 @@ int hierarchythre = 5;
 int qrsize = 100;
 double areathre = 0.005;
 double distthre = 0.2;
+
+extern void LocalThBinarization (Mat qr, Mat &out);
+extern void LocalPreWorkGray (Mat &qrGray);
+
 
 double dist (Point2f x, Point2f y) {
     // Return the distance between two points
@@ -217,33 +222,34 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     pts2.push_back (Point2f (qrsize, qrsize));
     pts2.push_back (Point2f (0, qrsize));
     Mat M = getPerspectiveTransform (pts1, pts2);
-    Mat gray, bin, firstImg;
+    Mat gray, firstImg, bin;
     warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
 
     // convert to binary image
     cvtColor (firstImg, gray,CV_RGB2GRAY);
-    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
+    LocalPreWorkGray (gray);
+//    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
+    LocalThBinarization (gray, bin);
 
     // Find K1, K2
     vector<Point2f> K1, K2;
     K1.push_back (Point2f(0, 0));
     K2.push_back (Point2f(0, 0));
     double minK1 = INF, minK2 = INF;
-    for (int i = qrsize - 1; i > int (0.9 *qrsize); --i) {
-        for (int j = qrsize - 1; j > int (0.9 *qrsize); --j)
-            if (bin.at<uchar>(i, j) == 0) {
+    for (int i = qrsize - 1; i > int (0.85 * qrsize); --i) 
+        for (int j = qrsize - 1; j > int (0.85 * qrsize); --j)
+            if (bin.at<uchar>(j, i) == 0) {
                 // Update K1
                 if (minK1 > (qrsize - i + 0.0) / j) {
                     minK1 = (qrsize - i + 0.0) / j;
-                    K1[0] = Point2f (i, j);
+                    K1[0] = Point2f(i, j);
                 }
                 // Update K2
                 if (minK2 > (qrsize - j + 0.0) / i) {
                     minK2 = (qrsize - j + 0.0) / i;
-                    K2[0] = Point2f (i, j);
+                    K2[0] = Point2f(i, j);
                 }
             }
-    }
     // P3 should be the intersection of P4K2 and P2K1
     M = getPerspectiveTransform (pts2, pts1);
     vector<Point2f> realK1, realK2;
@@ -394,8 +400,6 @@ int main(int argc, const char *argv[]) {
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat edges (frame.size (), CV_MAKETYPE (frame.depth (), 1));
-    firstImg = Mat::zeros(qrsize, qrsize, CV_8UC3 );
-    bin = Mat::zeros(qrsize, qrsize, CV_8UC3 );
 
     cout << "Press any key to return." << endl;
 
