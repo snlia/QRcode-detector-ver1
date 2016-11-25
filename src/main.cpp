@@ -15,7 +15,7 @@ enum {UP, RIGHT, DOWN, LEFT};
 
 vector<Vec4i> hierarchy;
 vector<vector<Point>> contours;
-Mat frame;
+Mat frame, rawFrame;
 int f [1000000];
 
 bool useblur = 1;
@@ -27,8 +27,41 @@ int qrsize = 100;
 double areathre = 0.005;
 double distthre = 0.2;
 
+double dist (Point2f x, Point2f y) {
+    // Return the distance between two points
+    return sqrt (sqr (x.x - y.x) + sqr (x.y - y.y));
+}
+
 double crossProduct (Point2f A, Point2f B, Point2f C) {
     return ((B.x - A.x) * (C.y - B.y) - (C.x - B.x) * (B.y - A.y));
+}
+
+double distLine (Point2f X, Point2f A, Point2f B) {
+    // Returen the distance between Point X and Line AB
+    return abs (crossProduct (X, A, B) / dist (A, B));
+}
+
+double dotProduct (Point2f A, Point2f B) {
+    return A.x * B.x + A.y * B.y;
+}
+
+double cosAngle (Point2f A, Point2f B, Point2f C, Point2f D) {
+    return (dotProduct (Point2f (B.x - A.x, B.y - A.y), Point2f (D.x - C.x, D.y - C.y)) /
+            (dist (A, B) * dist (C, D)));
+}
+
+// Finds the intersection of two lines, or returns false.
+// The lines are defined by (o1, p1) and (o2, p2).
+Point2f intersection (Point2f o1, Point2f p1, Point2f o2, Point2f p2) {
+    Point2f x = o2 - o1;
+    Point2f d1 = p1 - o1;
+    Point2f d2 = p2 - o2;
+
+    float cross = d1.x*d2.y - d1.y*d2.x;
+
+    double t1 = (x.x * d2.y - x.y * d2.x)/cross;
+
+    return o1 + d1 * t1;
 }
 
 int countHierarchy (int x) {
@@ -50,7 +83,7 @@ vector<int> findCandidates (Mat frame) {
     tmp.clear ();
 
     for (int i = 0; i < contours.size (); ++i) f[i] = -1;
-    
+
     for (int i = 0; i < contours.size (); ++i) {
         if (usequad) {
             if (contours[i].size () == 4 && countHierarchy (i) >= hierarchythre) 
@@ -69,16 +102,6 @@ vector<int> findCandidates (Mat frame) {
         if (f[tmp[i]]) res.push_back (tmp[i]);
 
     return res;
-}
-
-double dist (Point2f x, Point2f y) {
-    // Return the distance between two points
-    return sqrt (sqr (x.x - y.x) + sqr (x.y - y.y));
-}
-
-double distLine (Point2f X, Point2f A, Point2f B) {
-    // Returen the distance between Point X and Line AB
-    return abs (crossProduct (X, A, B) / dist (A, B));
 }
 
 vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
@@ -154,8 +177,79 @@ Point2f findAwayFromPoint (int x, Point2f P) {
     return res;
 }
 
-Point2f findN (Point2f top, Point2f right, Point2f left) {
-        return Point2f (right.x + left.x - top.x, right.y + left.y - top.y);
+Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right) {
+    Point2f verP1 = findAwayFromPoint (top, P1);
+
+    // Find the right aligned point for corner P2
+    Point2f verP2;
+    double maxTheta = -INF;
+    for (int i = 0; i < contours[right].size (); ++i) {
+        double tmp = cosAngle (P1, verP1, P2, contours[right][i]);
+        if (tmp > maxTheta) {
+            maxTheta = tmp;
+            verP2 = contours[right][i];
+        }
+    }
+    // Find the left aligned point for corner P4
+    Point2f verP4;
+    maxTheta = -INF;
+    for (int i = 0; i < contours[left].size (); ++i) {
+        double tmp = cosAngle (P1, verP1, P4, contours[left][i]);
+        if (tmp > maxTheta) {
+            maxTheta = tmp;
+            verP4 = contours[left][i];
+        }
+    }
+
+    // Caculate the intersection of P1verP1 and P2verP2, we use the result to do the first perspective transform
+    Point2f P3;
+    if (dist (P1, intersection (P1, verP1, P2, verP2)) > dist (P1, intersection (P1, verP1, P4, verP4)))
+        P3 = intersection (P1, verP1, P2, verP2);
+    else
+        P3 = intersection (P1, verP1, P4, verP4);
+
+    // perspective transform
+    vector<Point2f> pts1, pts2;
+    pts1.push_back (P1); pts1.push_back (P2);
+    pts1.push_back (P3); pts1.push_back (P4);
+    pts2.push_back (Point2f (0, 0));
+    pts2.push_back (Point2f (qrsize, 0));
+    pts2.push_back (Point2f (qrsize, qrsize));
+    pts2.push_back (Point2f (0, qrsize));
+    Mat M = getPerspectiveTransform (pts1, pts2);
+    Mat gray, bin, firstImg;
+    warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
+
+    // convert to binary image
+    cvtColor (firstImg, gray,CV_RGB2GRAY);
+    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
+
+    // Find K1, K2
+    vector<Point2f> K1, K2;
+    K1.push_back (Point2f(0, 0));
+    K2.push_back (Point2f(0, 0));
+    double minK1 = INF, minK2 = INF;
+    for (int i = qrsize - 1; i > int (0.9 *qrsize); --i) {
+        for (int j = qrsize - 1; j > int (0.9 *qrsize); --j)
+            if (bin.at<uchar>(i, j) == 0) {
+                // Update K1
+                if (minK1 > (qrsize - i + 0.0) / j) {
+                    minK1 = (qrsize - i + 0.0) / j;
+                    K1[0] = Point2f (i, j);
+                }
+                // Update K2
+                if (minK2 > (qrsize - j + 0.0) / i) {
+                    minK2 = (qrsize - j + 0.0) / i;
+                    K2[0] = Point2f (i, j);
+                }
+            }
+    }
+    // P3 should be the intersection of P4K2 and P2K1
+    M = getPerspectiveTransform (pts2, pts1);
+    vector<Point2f> realK1, realK2;
+    perspectiveTransform (K1, realK1, M);
+    perspectiveTransform (K2, realK2, M);
+    return intersection (P4, realK2[0], P2, realK1[0]);
 }
 
 vector<Point2f> findCorners (int top, int left, int right, Point2f meanTop, Point2f meanLeft, Point2f meanRight) {
@@ -168,7 +262,7 @@ vector<Point2f> findCorners (int top, int left, int right, Point2f meanTop, Poin
     res.push_back (A);
     res.push_back (B);
     res.push_back (C);
-    res.push_back (findN (A, B, C));
+    res.push_back (findN (A, B, C, top, left, right));
     return res;
 }
 
@@ -197,7 +291,7 @@ vector<Mat> findQR (vector<int> candidates) {
                 if (area_constraint (contourArea (contours[candidates[A]]), 
                             contourArea (contours[candidates[B]]), 
                             contourArea (contours[candidates[C]]))
-                        ) 
+                   ) 
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
@@ -207,19 +301,19 @@ vector<Mat> findQR (vector<int> candidates) {
                 // Find all corners
                 pts1 = findCorners (candidates[top], candidates[left], candidates[right], mean[top], mean[left], mean[right]);
                 /*
-                circle (frame, cvPoint (pts1[0].x, pts1[0].y), 10 , Scalar(255,0,0), 2, 8, 0);
-                circle (frame, cvPoint (pts1[2].x, pts1[2].y), 10, Scalar(0,255,0), 2, 8, 0);
-                circle (frame, cvPoint (pts1[1].x, pts1[1].y), 10, Scalar(0,0,255), 2, 8, 0);
-                circle (frame, cvPoint (pts1[3].x, pts1[3].y), 10, Scalar(255,255,255), 2, 8, 0);
-                */
+                   circle (frame, cvPoint (pts1[0].x, pts1[0].y), 10 , Scalar(255,0,0), 2, 8, 0);
+                   circle (frame, cvPoint (pts1[2].x, pts1[2].y), 10, Scalar(0,255,0), 2, 8, 0);
+                   circle (frame, cvPoint (pts1[1].x, pts1[1].y), 10, Scalar(0,0,255), 2, 8, 0);
+                   circle (frame, cvPoint (pts1[3].x, pts1[3].y), 10, Scalar(255,255,255), 2, 8, 0);
+                 */
                 pts2.clear ();
                 pts2.push_back(Point2f(0,0));
-				pts2.push_back(Point2f(qr.cols,0));
-				pts2.push_back(Point2f(0, qr.rows));
-				pts2.push_back(Point2f(qr.cols, qr.rows));
+                pts2.push_back(Point2f(qrsize,0));
+                pts2.push_back(Point2f(0, qrsize));
+                pts2.push_back(Point2f(qrsize, qrsize));
                 // Do perspective transform
                 Mat M = getPerspectiveTransform (pts1,pts2);
-                warpPerspective (frame, raw, M, Size (qr.cols,qr.rows));
+                warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
                 copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
 
                 // Draw the FIG
@@ -292,18 +386,21 @@ int parameter_init (int argc, const char *argv[]) {
 int main(int argc, const char *argv[]) {
 
     if (parameter_init (argc, argv)) return 0;
-    
-	VideoCapture capture(0);
+
+    VideoCapture capture(0);
 
     capture >> frame;
 
-	Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
-	Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
-	Mat edges (frame.size (), CV_MAKETYPE (frame.depth (), 1));
+    Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
+    Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
+    Mat edges (frame.size (), CV_MAKETYPE (frame.depth (), 1));
+    firstImg = Mat::zeros(qrsize, qrsize, CV_8UC3 );
+    bin = Mat::zeros(qrsize, qrsize, CV_8UC3 );
 
     cout << "Press any key to return." << endl;
 
     for (int key = -1; !~key; capture >> frame) {
+        frame.copyTo (rawFrame);
         // Change to grayscale
         cvtColor (frame, gray, CV_RGB2GRAY);
 
@@ -313,7 +410,7 @@ int main(int argc, const char *argv[]) {
         Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
         if (usequad) {
             contours.clear ();
-            Mat approx;
+            vector<Point> approx;
             vector<vector<Point>> raw_contours;
             findContours (edges, raw_contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
             for (int i = 0; i < raw_contours.size (); ++i) {
@@ -324,7 +421,7 @@ int main(int argc, const char *argv[]) {
         else 
             findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
         vector<int> candidates = findCandidates (gray);
-        
+
         vector<Mat> qrs = findQR (candidates);
 
         for (int i = 0; i < qrs.size (); ++i) {
@@ -337,7 +434,7 @@ int main(int argc, const char *argv[]) {
             imshow (Name, qrs[i]);
         }
 
-		imshow ("Image", frame);
+        imshow ("Image", frame);
 
         key = waitKey (100);
     }
