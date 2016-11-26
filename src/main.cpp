@@ -18,7 +18,7 @@ enum {UP, RIGHT, DOWN, LEFT};
 
 vector<Vec4i> hierarchy;
 vector<vector<Point>> contours;
-Mat frame, rawFrame;
+Mat frame, rawFrame, tmpFrame;
 int f [1000000];
 
 bool useblur = 1;
@@ -210,17 +210,19 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
 
     // Caculate the intersection of P1verP1 and P2verP2, we use the result to do the first perspective transform
     Point2f P3, originP3;
-    if (dist (P1, intersection (P1, verP1, P2, verP2)) > dist (P1, intersection (P1, verP1, P4, verP4)))
+/*    if (dist (P1, intersection (P1, verP1, P2, verP2)) > dist (P1, intersection (P1, verP1, P4, verP4)))
         originP3 = P3 = intersection (P1, verP1, P2, verP2);
     else
         originP3 = P3 = intersection (P1, verP1, P4, verP4);
+        */
+    originP3 = intersection (P2, verP2, P4, verP4);
 
     // relocate P3
     vector<Point2f> pts1, pts2;
     Mat M, gray, firstImg, bin;
     double ratio, optRatio = 0;
     int minFlag = INF;
-    for (ratio = -0.25; ratio < 0.1; ratio += 0.01) {
+    for (ratio = -0.2; ratio < 0.1; ratio += 0.01) {
         P3 = originP3 + (verP1 - P1) * ratio;
         pts1.clear (); pts2.clear ();
         pts1.push_back (P1); pts1.push_back (P2);
@@ -238,15 +240,15 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
         LocalThBinarization (gray, bin);
         int flag = 0;
         for (int i = int (qrsize * 0.9); i < qrsize; ++i) {
-            flag += bin.at<uchar>(0, i) == 0;
-            flag += bin.at<uchar>(i, 0) == 0;
+            flag += bin.at<uchar>(qrsize - 1, i) == 0;
+            flag += bin.at<uchar>(i, qrsize - 1) == 0;
         }
         /*
         if (minFlag == INF) {
             imshow ("bin", bin);
             pause;
         }*/
-        if (flag < minFlag) {
+        if (flag <= minFlag) {
             minFlag = flag;
             optRatio = ratio;
         }
@@ -271,6 +273,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     LocalPreWorkGray (gray);
     //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
     LocalThBinarization (gray, bin);
+    bin.copyTo (tmpFrame);
 
     //imshow ("bin", bin);
     //pause;
@@ -446,6 +449,7 @@ int main(int argc, const char *argv[]) {
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat edges (frame.size (), CV_MAKETYPE (frame.depth (), 1));
+    tmpFrame = Mat::zeros(qrsize, qrsize, CV_8UC1);
 
     cout << "Press any key to return." << endl;
 
@@ -485,6 +489,7 @@ int main(int argc, const char *argv[]) {
         }
 
         imshow ("Image", frame);
+        imshow ("Tmp", tmpFrame);
 
         key = waitKey (100);
     }
