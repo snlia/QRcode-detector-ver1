@@ -8,6 +8,7 @@
 
 #define sqr(x) ((x) * (x))
 #define INF 1000
+#define pause for (int key = -1; !~key; key = waitKey (100))
 
 using namespace std;
 using namespace cv;
@@ -217,9 +218,10 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     // relocate P3
     vector<Point2f> pts1, pts2;
     Mat M, gray, firstImg, bin;
-    double ratio;
-    for (ratio = -0.2; ratio < 0.2; ratio += 0.01) {
-        P3 = originP3 + (P1 - verP1) * ratio;
+    double ratio, optRatio = 0;
+    int minFlag = INF;
+    for (ratio = -0.25; ratio < 0.25; ratio += 0.01) {
+        P3 = originP3 + (verP1 - P1) * ratio;
         pts1.clear (); pts2.clear ();
         pts1.push_back (P1); pts1.push_back (P2);
         pts1.push_back (P3); pts1.push_back (P4);
@@ -239,8 +241,32 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
             flag += bin.at<uchar>(i, qrsize - 1) == 0;
             flag += bin.at<uchar>(qrsize - 1, i) == 0;
         }
-        if (flag == 0) break;
+        if (flag <= minFlag) {
+            minFlag = flag;
+            optRatio = ratio;
+        }
+//        printf ("%.4lf\n", ratio);
+//        imshow ("bin", bin);
+//        pause;
     }
+//    printf ("%.4lf\n", optRatio);
+
+    // Caculate the optium P3
+    P3 = originP3 + (verP1 - P1) * optRatio;
+    pts1.clear (); pts2.clear ();
+    pts1.push_back (P1); pts1.push_back (P2);
+    pts1.push_back (P3); pts1.push_back (P4);
+    pts2.push_back (Point2f (0, 0));
+    pts2.push_back (Point2f (qrsize, 0));
+    pts2.push_back (Point2f (qrsize, qrsize));
+    pts2.push_back (Point2f (0, qrsize));
+    M = getPerspectiveTransform (pts1, pts2);
+    warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
+    // convert to binary image
+    cvtColor (firstImg, gray,CV_RGB2GRAY);
+    LocalPreWorkGray (gray);
+    //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
+    LocalThBinarization (gray, bin);
 
     // Find K1, K2
     vector<Point2f> K1, K2;
@@ -331,7 +357,7 @@ vector<Mat> findQR (vector<int> candidates) {
                 // Do perspective transform
                 Mat M = getPerspectiveTransform (pts1,pts2);
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
-//                copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
+                copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
 
                 // Draw the FIP
                 drawContours (frame, contours, candidates[top] , Scalar(255,0,0), 2, 8, hierarchy, 0 );
@@ -404,10 +430,10 @@ int main(int argc, const char *argv[]) {
 
     if (parameter_init (argc, argv)) return 0;
 
-//    VideoCapture capture(0);
+    VideoCapture capture(0);
 
-//    capture >> frame;
-    frame = imread ("../data/photo_2016-11-26_13-59-01.jpg");
+    capture >> frame;
+//    frame = imread ("../data/photo_2016-11-26_13-59-01.jpg");
 
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
@@ -415,7 +441,7 @@ int main(int argc, const char *argv[]) {
 
     cout << "Press any key to return." << endl;
 
-    for (int key = -1; !~key; /*capture >> frame*/) {
+    for (int key = -1; !~key; capture >> frame) {
         frame.copyTo (rawFrame);
         // Change to grayscale
         cvtColor (frame, gray, CV_RGB2GRAY);
