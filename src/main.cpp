@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <cstdlib>
 #include "swordfeng.h"
 #include <boost/program_options.hpp>
 
@@ -207,37 +208,47 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     }
 
     // Caculate the intersection of P1verP1 and P2verP2, we use the result to do the first perspective transform
-    Point2f P3;
+    Point2f P3, originP3;
     if (dist (P1, intersection (P1, verP1, P2, verP2)) > dist (P1, intersection (P1, verP1, P4, verP4)))
-        P3 = intersection (P1, verP1, P2, verP2);
+        originP3 = P3 = intersection (P1, verP1, P2, verP2);
     else
-        P3 = intersection (P1, verP1, P4, verP4);
+        originP3 = P3 = intersection (P1, verP1, P4, verP4);
 
-    // perspective transform
+    // relocate P3
     vector<Point2f> pts1, pts2;
-    pts1.push_back (P1); pts1.push_back (P2);
-    pts1.push_back (P3); pts1.push_back (P4);
-    pts2.push_back (Point2f (0, 0));
-    pts2.push_back (Point2f (qrsize, 0));
-    pts2.push_back (Point2f (qrsize, qrsize));
-    pts2.push_back (Point2f (0, qrsize));
-    Mat M = getPerspectiveTransform (pts1, pts2);
-    Mat gray, firstImg, bin;
-    warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
-
-    // convert to binary image
-    cvtColor (firstImg, gray,CV_RGB2GRAY);
-    LocalPreWorkGray (gray);
-//    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
-    LocalThBinarization (gray, bin);
+    Mat M, gray, firstImg, bin;
+    double ratio;
+    for (ratio = -0.2; ratio < 0.2; ratio += 0.01) {
+        P3 = originP3 + (P1 - verP1) * ratio;
+        pts1.clear (); pts2.clear ();
+        pts1.push_back (P1); pts1.push_back (P2);
+        pts1.push_back (P3); pts1.push_back (P4);
+        pts2.push_back (Point2f (0, 0));
+        pts2.push_back (Point2f (qrsize, 0));
+        pts2.push_back (Point2f (qrsize, qrsize));
+        pts2.push_back (Point2f (0, qrsize));
+        M = getPerspectiveTransform (pts1, pts2);
+        warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
+        // convert to binary image
+        cvtColor (firstImg, gray,CV_RGB2GRAY);
+        LocalPreWorkGray (gray);
+        //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
+        LocalThBinarization (gray, bin);
+        int flag = 0;
+        for (int i = int (qrsize * 0.9); i < qrsize; ++i) {
+            flag += bin.at<uchar>(i, qrsize - 1) == 0;
+            flag += bin.at<uchar>(qrsize - 1, i) == 0;
+        }
+        if (flag == 0) break;
+    }
 
     // Find K1, K2
     vector<Point2f> K1, K2;
     K1.push_back (Point2f(0, 0));
     K2.push_back (Point2f(0, 0));
     double minK1 = INF, minK2 = INF;
-    for (int i = qrsize - 1; i > int (0.85 * qrsize); --i) 
-        for (int j = qrsize - 1; j > int (0.85 * qrsize); --j)
+    for (int i = qrsize - 1; i > int (0.8 * qrsize); --i) 
+        for (int j = qrsize - 1; j > int (0.8 * qrsize); --j)
             if (bin.at<uchar>(j, i) == 0) {
                 // Update K1
                 if (minK1 > (qrsize - i + 0.0) / j) {
