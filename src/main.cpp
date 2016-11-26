@@ -7,7 +7,7 @@
 #include <boost/program_options.hpp>
 
 #define sqr(x) ((x) * (x))
-#define INF 1000
+#define INF 10000000
 #define pause for (int key = -1; !~key; key = waitKey (100))
 
 using namespace std;
@@ -220,7 +220,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     Mat M, gray, firstImg, bin;
     double ratio, optRatio = 0;
     int minFlag = INF;
-    for (ratio = -0.25; ratio < 0.25; ratio += 0.01) {
+    for (ratio = -0.25; ratio < 0.1; ratio += 0.01) {
         P3 = originP3 + (verP1 - P1) * ratio;
         pts1.clear (); pts2.clear ();
         pts1.push_back (P1); pts1.push_back (P2);
@@ -238,18 +238,22 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
         LocalThBinarization (gray, bin);
         int flag = 0;
         for (int i = int (qrsize * 0.9); i < qrsize; ++i) {
-            flag += bin.at<uchar>(i, qrsize - 1) == 0;
-            flag += bin.at<uchar>(qrsize - 1, i) == 0;
+            flag += bin.at<uchar>(0, i) == 0;
+            flag += bin.at<uchar>(i, 0) == 0;
         }
-        if (flag <= minFlag) {
+        /*
+        if (minFlag == INF) {
+            imshow ("bin", bin);
+            pause;
+        }*/
+        if (flag < minFlag) {
             minFlag = flag;
             optRatio = ratio;
         }
-//        printf ("%.4lf\n", ratio);
-//        imshow ("bin", bin);
-//        pause;
+   //     printf ("%d\n", flag);
+  //      printf ("%.4lf\n", ratio);
     }
-//    printf ("%.4lf\n", optRatio);
+//    printf ("OPT %.4lf\n", optRatio);
 
     // Caculate the optium P3
     P3 = originP3 + (verP1 - P1) * optRatio;
@@ -267,6 +271,9 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     LocalPreWorkGray (gray);
     //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
     LocalThBinarization (gray, bin);
+
+    //imshow ("bin", bin);
+    //pause;
 
     // Find K1, K2
     vector<Point2f> K1, K2;
@@ -293,6 +300,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     perspectiveTransform (K1, realK1, M);
     perspectiveTransform (K2, realK2, M);
     return intersection (P4, realK2[0], P2, realK1[0]);
+    puts ("Next!");
 }
 
 vector<Point2f> findCorners (int top, int left, int right, Point2f meanTop, Point2f meanLeft, Point2f meanRight) {
