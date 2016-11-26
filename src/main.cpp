@@ -23,6 +23,7 @@ int f [1000000];
 
 bool useblur = 1;
 bool usequad = 1;
+bool useimage = 0;
 int cannylow = 75;
 int cannyhigh = 200;
 int hierarchythre = 4;
@@ -273,7 +274,6 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     LocalPreWorkGray (gray);
     //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
     LocalThBinarization (gray, bin);
-    bin.copyTo (tmpFrame);
 
     //imshow ("bin", bin);
     //pause;
@@ -385,6 +385,7 @@ int parameter_init (int argc, const char *argv[]) {
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "show this message.")
+        ("image", "use image detection.")
         ("noblur", "do not use blur.")
         ("noquad", "do not use quadrangle detection.")
         ("clow", po::value<double>(), "set up the low thresold of canny, default 75.")
@@ -402,35 +403,39 @@ int parameter_init (int argc, const char *argv[]) {
         cout << desc << endl;
         return EOF;
     }
-    else if (vm.count ("noblur")) {
+    if (vm.count ("image")) {
+        cout << "Image detection." << endl;
+        useimage = 1;
+    }
+    if (vm.count ("noblur")) {
         cout << "Do not use blur." << endl;
         useblur = 0;
     } 
-    else if (vm.count ("noquad")) {
+    if (vm.count ("noquad")) {
         cout << "Do not use quadrangle detection." << endl;
         usequad = 0;
     }
-    else  if (vm.count ("clow")) {
+    if (vm.count ("clow")) {
         cannylow = vm["clow"].as<double> ();
         printf ("canny low thresold is set as %lf\n", cannylow);
     }
-    else if (vm.count ("chigh")) {
+    if (vm.count ("chigh")) {
         cannyhigh = vm["chigh"].as<double> ();
         printf ("canny high thresold is set as %lf\n", cannyhigh);
     }
-    else if (vm.count ("size")) {
+    if (vm.count ("size")) {
         qrsize = vm["size"].as<int> ();
         printf ("QRcode size is set as %d\n", qrsize);
     }
-    else if (vm.count ("hthre")) {
+    if (vm.count ("hthre")) {
         hierarchythre = vm["hthre"].as<int> ();
         printf ("hierarchy constraint thresold is set as %d\n", hierarchythre);
     }
-    else if (vm.count ("athre")) {
+    if (vm.count ("athre")) {
         areathre = vm["athre"].as<double> ();
         printf ("area constraint thresold is set as %lf\n", areathre);
     }
-    else if (vm.count ("dthre")) {
+    if (vm.count ("dthre")) {
         distthre = vm["dthre"].as<double> ();
         printf ("distance constraint thresold is set as %lf\n", distthre);
     }
@@ -441,57 +446,104 @@ int main(int argc, const char *argv[]) {
 
     if (parameter_init (argc, argv)) return 0;
 
-    VideoCapture capture(0);
-
-    capture >> frame;
-//    frame = imread ("../data/photo_2016-11-26_13-59-01.jpg");
-
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat edges (frame.size (), CV_MAKETYPE (frame.depth (), 1));
     tmpFrame = Mat::zeros(qrsize, qrsize, CV_8UC1);
 
-    cout << "Press any key to return." << endl;
+    if (useimage) {
+        cout << "Plz input the filename:" << endl;
+        string filename;
+        cin >> filename;
+        for (; filename != "q"; cin >> filename) {
+            frame = imread ("../data/" + filename);
+            frame.copyTo (rawFrame);
+            // Change to grayscale
+            cvtColor (frame, gray, CV_RGB2GRAY);
 
-    for (int key = -1; !~key; capture >> frame) {
-        frame.copyTo (rawFrame);
-        // Change to grayscale
-        cvtColor (frame, gray, CV_RGB2GRAY);
-
-        if (useblur)
-            blur (gray, detected_edges, Size(3,3));
-        // Find FIP candidates
-        Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
-        if (usequad) {
-            contours.clear ();
-            vector<Point> approx;
-            vector<vector<Point>> raw_contours;
-            findContours (edges, raw_contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
-            for (int i = 0; i < raw_contours.size (); ++i) {
-                approxPolyDP (Mat(raw_contours[i]), approx, arcLength (Mat(raw_contours[i]), true) * 0.02, true);
-                contours.push_back (approx);
+            if (useblur)
+                blur (gray, detected_edges, Size(3,3));
+            // Find FIP candidates
+            Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
+            if (usequad) {
+                contours.clear ();
+                vector<Point> approx;
+                vector<vector<Point>> raw_contours;
+                findContours (edges, raw_contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+                for (int i = 0; i < raw_contours.size (); ++i) {
+                    approxPolyDP (Mat(raw_contours[i]), approx, arcLength (Mat(raw_contours[i]), true) * 0.02, true);
+                    contours.push_back (approx);
+                }
             }
+            else 
+                findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+            vector<int> candidates = findCandidates (gray);
+
+            vector<Mat> qrs = findQR (candidates);
+
+            for (int i = 0; i < qrs.size (); ++i) {
+                String Name = "QR";
+                String id;
+                stringstream sout;
+                sout << i;
+                id = sout.str ();
+                Name += id;
+                imshow (Name, qrs[i]);
+            }
+
+            imshow ("Image", frame);
+
+            cout << "Press any key to continue." << endl;
+            pause;
+            cout << "Plz input the filename:" << endl;
         }
-        else 
-            findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
-        vector<int> candidates = findCandidates (gray);
+    }
+    else {
+        VideoCapture capture(0);
 
-        vector<Mat> qrs = findQR (candidates);
+        capture >> frame;
 
-        for (int i = 0; i < qrs.size (); ++i) {
-            String Name = "QR";
-            String id;
-            stringstream sout;
-            sout << i;
-            id = sout.str ();
-            Name += id;
-            imshow (Name, qrs[i]);
+        cout << "Press any key to return." << endl;
+
+        for (int key = -1; !~key; capture >> frame) {
+            frame.copyTo (rawFrame);
+            // Change to grayscale
+            cvtColor (frame, gray, CV_RGB2GRAY);
+
+            if (useblur)
+                blur (gray, detected_edges, Size(3,3));
+            // Find FIP candidates
+            Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
+            if (usequad) {
+                contours.clear ();
+                vector<Point> approx;
+                vector<vector<Point>> raw_contours;
+                findContours (edges, raw_contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+                for (int i = 0; i < raw_contours.size (); ++i) {
+                    approxPolyDP (Mat(raw_contours[i]), approx, arcLength (Mat(raw_contours[i]), true) * 0.02, true);
+                    contours.push_back (approx);
+                }
+            }
+            else 
+                findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+            vector<int> candidates = findCandidates (gray);
+
+            vector<Mat> qrs = findQR (candidates);
+
+            for (int i = 0; i < qrs.size (); ++i) {
+                String Name = "QR";
+                String id;
+                stringstream sout;
+                sout << i;
+                id = sout.str ();
+                Name += id;
+                imshow (Name, qrs[i]);
+            }
+
+            imshow ("Image", frame);
+
+            key = waitKey (100);
         }
-
-        imshow ("Image", frame);
-        imshow ("Tmp", tmpFrame);
-
-        key = waitKey (100);
     }
 
     return 0;
