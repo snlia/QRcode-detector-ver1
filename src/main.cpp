@@ -24,7 +24,7 @@ bool useblur = 1;
 bool usequad = 1;
 int cannylow = 75;
 int cannyhigh = 200;
-int hierarchythre = 5;
+int hierarchythre = 4;
 int qrsize = 100;
 double areathre = 0.005;
 double distthre = 0.2;
@@ -244,11 +244,11 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
 
     // Find K1, K2
     vector<Point2f> K1, K2;
-    K1.push_back (Point2f(0, 0));
-    K2.push_back (Point2f(0, 0));
+    K1.push_back (Point2f(qrsize - 1, qrsize - 1));
+    K2.push_back (Point2f(qrsize - 1, qrsize - 1));
     double minK1 = INF, minK2 = INF;
-    for (int i = qrsize - 1; i > int (0.8 * qrsize); --i) 
-        for (int j = qrsize - 1; j > int (0.8 * qrsize); --j)
+    for (int i = qrsize - 1; i > int (0.7 * qrsize); --i) 
+        for (int j = qrsize - 1; j > int (0.7 * qrsize); --j)
             if (bin.at<uchar>(j, i) == 0) {
                 // Update K1
                 if (minK1 > (qrsize - i + 0.0) / j) {
@@ -331,9 +331,9 @@ vector<Mat> findQR (vector<int> candidates) {
                 // Do perspective transform
                 Mat M = getPerspectiveTransform (pts1,pts2);
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
-                copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
+//                copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
 
-                // Draw the FIG
+                // Draw the FIP
                 drawContours (frame, contours, candidates[top] , Scalar(255,0,0), 2, 8, hierarchy, 0 );
                 drawContours (frame, contours, candidates[left] , Scalar(0,255,0), 2, 8, hierarchy, 0 );
                 drawContours (frame, contours, candidates[right] , Scalar(0,0,255), 2, 8, hierarchy, 0 );
@@ -404,9 +404,10 @@ int main(int argc, const char *argv[]) {
 
     if (parameter_init (argc, argv)) return 0;
 
-    VideoCapture capture(0);
+//    VideoCapture capture(0);
 
-    capture >> frame;
+//    capture >> frame;
+    frame = imread ("../data/photo_2016-11-26_13-59-01.jpg");
 
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
@@ -414,14 +415,14 @@ int main(int argc, const char *argv[]) {
 
     cout << "Press any key to return." << endl;
 
-    for (int key = -1; !~key; capture >> frame) {
+    for (int key = -1; !~key; /*capture >> frame*/) {
         frame.copyTo (rawFrame);
         // Change to grayscale
         cvtColor (frame, gray, CV_RGB2GRAY);
 
         if (useblur)
             blur (gray, detected_edges, Size(3,3));
-        // Find FIG candidates
+        // Find FIP candidates
         Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
         if (usequad) {
             contours.clear ();
