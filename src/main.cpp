@@ -24,11 +24,11 @@ int f [1000000];
 bool useblur = 1;
 bool usequad = 1;
 bool useimage = 0;
-int cannylow = 75;
-int cannyhigh = 200;
+int cannylow = 25;
+int cannyhigh = 150;
 int hierarchythre = 4;
 int qrsize = 100;
-double areathre = 0.005;
+double areathre = 0.3;
 double distthre = 0.2;
 
 extern void LocalThBinarization (Mat qr, Mat &out);
@@ -456,15 +456,19 @@ int main(int argc, const char *argv[]) {
         string filename;
         cin >> filename;
         for (; filename != "q"; cin >> filename) {
+            cout << filename << endl;
             frame = imread ("../data/" + filename);
             frame.copyTo (rawFrame);
             // Change to grayscale
             cvtColor (frame, gray, CV_RGB2GRAY);
 
-            if (useblur)
+            if (useblur) {
                 blur (gray, detected_edges, Size(3,3));
-            // Find FIP candidates
-            Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
+                // Find FIP candidates
+                Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
+            }
+            else 
+                Canny (gray, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
             if (usequad) {
                 contours.clear ();
                 vector<Point> approx;
