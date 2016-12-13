@@ -30,6 +30,8 @@ int hierarchythre = 4;
 int qrsize = 100;
 double areathre = 0.3;
 double distthre = 0.2;
+double firstPer = 0.8;
+double secondPer = 0.7;
 
 extern void LocalThBinarization (Mat qr, Mat &out);
 extern void LocalPreWorkGray (Mat &qrGray);
@@ -133,8 +135,11 @@ vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
     return res;
 }
 
-bool dist_constraint (double AB, double BC, double CA) {
+bool dist_constraint (double AB, double BC, double CA, double len) {
     // TODO : add more constraint
+    if (AB < 1.6 * len || AB > 27 * len) return 1;
+    if (BC < 1.6 * len || BC > 27 * len) return 1;
+    if (CA < 1.6 * len || CA > 27 * len) return 1;
     if (AB > BC && AB > CA) {
         if (abs (BC - CA) > distthre * max (BC, CA)) return 1;
         return 0;
@@ -240,7 +245,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
         //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
         LocalThBinarization (gray, bin);
         int flag = 0;
-        for (int i = int (qrsize * 0.9); i < qrsize; ++i) {
+        for (int i = int (qrsize * firstPer); i < qrsize; ++i) {
             flag += bin.at<uchar>(qrsize - 1, i) == 0;
             flag += bin.at<uchar>(i, qrsize - 1) == 0;
         }
@@ -283,8 +288,8 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     K1.push_back (Point2f(qrsize - 1, qrsize - 1));
     K2.push_back (Point2f(qrsize - 1, qrsize - 1));
     double minK1 = INF, minK2 = INF;
-    for (int i = qrsize - 1; i > int (0.7 * qrsize); --i) 
-        for (int j = qrsize - 1; j > int (0.7 * qrsize); --j)
+    for (int i = qrsize - 1; i > int (secondPer * qrsize); --i) 
+        for (int j = qrsize - 1; j > int (secondPer * qrsize); --j)
             if (bin.at<uchar>(j, i) == 0) {
                 // Update K1
                 if (minK1 > (qrsize - i + 0.0) / j) {
@@ -341,11 +346,14 @@ vector<Mat> findQR (vector<int> candidates) {
                 double AB = dist (mean[A],mean[B]);
                 double BC = dist (mean[B],mean[C]);
                 double CA = dist (mean[C],mean[A]);
-                if (dist_constraint (AB, BC, CA)) continue;
                 if (area_constraint (contourArea (contours[candidates[A]]), 
                             contourArea (contours[candidates[B]]), 
                             contourArea (contours[candidates[C]]))
                    ) 
+                    continue;
+                if (dist_constraint (AB, BC, CA, sqrt (contourArea(contours[candidates[A]]) + 
+                                contourArea(contours[candidates[B]]) + 
+                                contourArea(contours[candidates[C]])) / 3)) 
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
@@ -391,6 +399,8 @@ int parameter_init (int argc, const char *argv[]) {
         ("clow", po::value<double>(), "set up the low thresold of canny, default 75.")
         ("chigh", po::value<double>(), "set up the high thresold of canny, default 200.")
         ("size", po::value<int>(), "set up the qr code size, default 100.")
+        ("firper", po::value<double>(), "set up the first perspective transform searching area, default 0.8.")
+        ("secper", po::value<double>(), "set up the second perspective transform searching area, default 0.7.")
         ("hthre", po::value<int>(), "set up the thresold of hierarchy, default 5.")
         ("athre", po::value<double>(), "set up the thresold of area constraint, default 0.2.")
         ("dthre", po::value<double>(), "set up the thresold of distance constraint, default 0.005.")
@@ -426,6 +436,14 @@ int parameter_init (int argc, const char *argv[]) {
     if (vm.count ("size")) {
         qrsize = vm["size"].as<int> ();
         printf ("QRcode size is set as %d\n", qrsize);
+    }
+    if (vm.count ("firper")) {
+        firstPer = vm["firper"].as<double> ();
+        printf ("first perspective transform searching area is set as %lf\n", firstPer);
+    }
+    if (vm.count ("secper")) {
+        secondPer = vm["secper"].as<double> ();
+        printf ("second perspective transform searching area is set as %lf\n", secondPer);
     }
     if (vm.count ("hthre")) {
         hierarchythre = vm["hthre"].as<int> ();
