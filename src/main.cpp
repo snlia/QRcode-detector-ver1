@@ -22,6 +22,7 @@ Mat frame, rawFrame, tmpFrame;
 int f [1000000];
 
 bool useblur = 1;
+bool usehist = 1;
 bool usequad = 1;
 bool useimage = 0;
 int cannylow = 25;
@@ -351,9 +352,9 @@ vector<Mat> findQR (vector<int> candidates) {
                             contourArea (contours[candidates[C]]))
                    ) 
                     continue;
-                if (dist_constraint (AB, BC, CA, sqrt (contourArea(contours[candidates[A]]) + 
+                if (dist_constraint (AB, BC, CA, sqrt ((contourArea(contours[candidates[A]]) + 
                                 contourArea(contours[candidates[B]]) + 
-                                contourArea(contours[candidates[C]])) / 3)) 
+                                contourArea(contours[candidates[C]])) / 3))) 
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
@@ -395,6 +396,7 @@ int parameter_init (int argc, const char *argv[]) {
         ("help", "show this message.")
         ("image", "use image detection.")
         ("noblur", "do not use blur.")
+        ("nohist", "do not use Hist equalization.")
         ("noquad", "do not use quadrangle detection.")
         ("clow", po::value<double>(), "set up the low thresold of canny, default 75.")
         ("chigh", po::value<double>(), "set up the high thresold of canny, default 200.")
@@ -420,6 +422,10 @@ int parameter_init (int argc, const char *argv[]) {
     if (vm.count ("noblur")) {
         cout << "Do not use blur." << endl;
         useblur = 0;
+    } 
+    if (vm.count ("nohist")) {
+        cout << "Do not use Hist equalization." << endl;
+        usehist = 0;
     } 
     if (vm.count ("noquad")) {
         cout << "Do not use quadrangle detection." << endl;
@@ -465,6 +471,7 @@ int main(int argc, const char *argv[]) {
     if (parameter_init (argc, argv)) return 0;
 
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
+    Mat rawGray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat edges (frame.size (), CV_MAKETYPE (frame.depth (), 1));
     tmpFrame = Mat::zeros(qrsize, qrsize, CV_8UC1);
@@ -479,6 +486,10 @@ int main(int argc, const char *argv[]) {
             frame.copyTo (rawFrame);
             // Change to grayscale
             cvtColor (frame, gray, CV_RGB2GRAY);
+            if (usehist) {
+                gray.copyTo (rawGray);
+                equalizeHist(rawGray, gray);
+            }
 
             if (useblur) {
                 blur (gray, detected_edges, Size(3,3));
@@ -532,6 +543,10 @@ int main(int argc, const char *argv[]) {
             // Change to grayscale
             cvtColor (frame, gray, CV_RGB2GRAY);
 
+            if (usehist) {
+                gray.copyTo (rawGray);
+                equalizeHist(rawGray, gray);
+            }
             if (useblur)
                 blur (gray, detected_edges, Size(3,3));
             // Find FIP candidates
